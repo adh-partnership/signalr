@@ -52,15 +52,12 @@ func TestServerJsonWebSockets(t *testing.T) {
 	testServer(t, "^JSON", signalr.HTTPTransports(signalr.TransportWebSockets))
 }
 
-/*
-@TODO
-This test is not functional atm... not sure why, but for the purposes of ADH this is fine since we only want Websockets support.
-When time permits I'll come back and look at this.
+// This test is not functional atm... not sure why, but for the purposes of ADH this is fine since we only want Websockets support.
+// When time permits I'll come back and look at this.
+//func TestServerJsonSSE(t *testing.T) {
+//	testServer(t, "^JSON", signalr.HTTPTransports(signalr.TransportServerSentEvents))
+//}
 
-	func TestServerJsonSSE(t *testing.T) {
-		testServer(t, "^JSON", signalr.HTTPTransports(signalr.TransportServerSentEvents))
-	}
-*/
 func TestServerMessagePack(t *testing.T) {
 	testServer(t, "^MessagePack", signalr.HTTPTransports(signalr.TransportWebSockets))
 }
@@ -81,6 +78,7 @@ func testServer(t *testing.T, testNamePattern string, transports func(signalr.Pa
 func runJest(t *testing.T, testNamePattern string, quitServer chan struct{}) {
 	defer func() { quitServer <- struct{}{} }()
 	var jest = exec.Command(filepath.FromSlash("node_modules/.bin/jest"), fmt.Sprintf("--testNamePattern=%v", testNamePattern))
+	fmt.Println("Running: ", jest.String())
 	stdout, err := jest.StdoutPipe()
 	if err != nil {
 		t.Error(err)

@@ -10,8 +10,8 @@
 		"test:jest": "npx jest -t 'e2e test with microsoft/signalr client should work'"
 	},
 	"dependencies": {
-		"@microsoft/signalr": "^8.0.0",
-		"@microsoft/signalr-protocol-msgpack": "^8.0.0",
+		"@microsoft/signalr": "^7.0.13",
+		"@microsoft/signalr-protocol-msgpack": "^7.0.13",
 		"@types/jest": "^29.5.1",
 		"@types/node": "^20.10.4",
 		"jest": "^29.7.0",
