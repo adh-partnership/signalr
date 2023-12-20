@@ -100,9 +100,9 @@ func WithHTTPServeMux(serveMux *http.ServeMux) func() MappableRouter {
 
 // MapHTTP maps the servers' hub to a path in a MappableRouter
 func (s *server) MapHTTP(routerFactory func() MappableRouter, path string) {
-	httpMux := newHTTPMux(s)
+	httpMux := NewHTTPMux(s)
 	router := routerFactory()
-	router.HandleFunc(fmt.Sprintf("%s/negotiate", path), httpMux.negotiate)
+	router.HandleFunc(fmt.Sprintf("%s/negotiate", path), httpMux.Negotiate)
 	router.Handle(path, httpMux)
 }
 

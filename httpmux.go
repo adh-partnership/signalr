@@ -1,8 +1,7 @@
 package signalr
 
 import (
-	"crypto/rand"
-	"encoding/base64"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/teivah/onecontext"
 	"nhooyr.io/websocket"
 )
@@ -21,7 +21,7 @@ type httpMux struct {
 	server        Server
 }
 
-func newHTTPMux(server Server) *httpMux {
+func NewHTTPMux(server Server) *httpMux {
 	return &httpMux{
 		connectionMap: make(map[string]Connection),
 		server:        server,
@@ -31,15 +31,15 @@ func newHTTPMux(server Server) *httpMux {
 func (h *httpMux) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	switch request.Method {
 	case "POST":
-		h.handlePost(writer, request)
+		h.HandlePost(writer, request)
 	case "GET":
-		h.handleGet(writer, request)
+		h.HandleGet(writer, request)
 	default:
 		writer.WriteHeader(http.StatusBadRequest)
 	}
 }
 
-func (h *httpMux) handlePost(writer http.ResponseWriter, request *http.Request) {
+func (h *httpMux) HandlePost(writer http.ResponseWriter, request *http.Request) {
 	connectionID := request.URL.Query().Get("id")
 	if connectionID == "" {
 		writer.WriteHeader(http.StatusBadRequest)
@@ -72,7 +72,7 @@ func (h *httpMux) handlePost(writer http.ResponseWriter, request *http.Request) 
 	}
 }
 
-func (h *httpMux) handleGet(writer http.ResponseWriter, request *http.Request) {
+func (h *httpMux) HandleGet(writer http.ResponseWriter, request *http.Request) {
 	upgrade := false
 	for _, connHead := range strings.Split(request.Header.Get("Connection"), ",") {
 		if strings.ToLower(strings.TrimSpace(connHead)) == "upgrade" {
@@ -82,15 +82,15 @@ func (h *httpMux) handleGet(writer http.ResponseWriter, request *http.Request) {
 	}
 	if upgrade &&
 		strings.ToLower(request.Header.Get("Upgrade")) == "websocket" {
-		h.handleWebsocket(writer, request)
+		h.HandleWebsocket(writer, request)
 	} else if strings.ToLower(request.Header.Get("Accept")) == "text/event-stream" {
-		h.handleServerSentEvent(writer, request)
+		h.HandleServerSentEvent(writer, request)
 	} else {
 		writer.WriteHeader(http.StatusBadRequest)
 	}
 }
 
-func (h *httpMux) handleServerSentEvent(writer http.ResponseWriter, request *http.Request) {
+func (h *httpMux) HandleServerSentEvent(writer http.ResponseWriter, request *http.Request) {
 	connectionID := request.URL.Query().Get("id")
 	if connectionID == "" {
 		writer.WriteHeader(http.StatusBadRequest)
@@ -143,7 +143,7 @@ func (h *httpMux) handleServerSentEvent(writer http.ResponseWriter, request *htt
 	}
 }
 
-func (h *httpMux) handleWebsocket(writer http.ResponseWriter, request *http.Request) {
+func (h *httpMux) HandleWebsocket(writer http.ResponseWriter, request *http.Request) {
 	accOptions := &websocket.AcceptOptions{
 		CompressionMode:    websocket.CompressionContextTakeover,
 		InsecureSkipVerify: h.server.insecureSkipVerify(),
@@ -188,34 +188,25 @@ func (h *httpMux) handleWebsocket(writer http.ResponseWriter, request *http.Requ
 	}
 }
 
-func (h *httpMux) negotiate(w http.ResponseWriter, req *http.Request) {
+func (h *httpMux) Negotiate(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "POST" {
 		w.WriteHeader(http.StatusBadRequest)
 	} else {
 		connectionID := newConnectionID()
 		connectionMapKey := connectionID
 
-		// Check the header for negotiateVersion
-		headerNegotiateVersion, err := strconv.Atoi(req.Header.Get("negotiateVersion"))
-		if err != nil {
-			headerNegotiateVersion = 0
-		}
-
-		// Check the query parameter for negotiateVersion
-		queryNegotiateVersion, err := strconv.Atoi(req.URL.Query().Get("negotiateVersion"))
-		if err != nil {
-			queryNegotiateVersion = 0
-		}
-
-		// Use the negotiateVersion from query if present, otherwise use the one from the header parameter
-		negotiateVersion := queryNegotiateVersion
-		if headerNegotiateVersion != 0 {
-			negotiateVersion = headerNegotiateVersion
+		negotiateVersion := 0
+		var err error
+		if req.URL.Query().Has("negotiateVersion") {
+			negotiateVersion, err = strconv.Atoi(req.URL.Query().Get("negotiateVersion"))
+			if err != nil {
+				negotiateVersion = 0
+			}
 		}
 
 		connectionToken := ""
 		if negotiateVersion == 1 {
-			connectionToken = newConnectionID()
+			connectionToken = newConnectionToken()
 			connectionMapKey = connectionToken
 		}
 		h.mx.Lock()
@@ -260,11 +251,11 @@ func (h *httpMux) serveConnection(c Connection) error {
 }
 
 func newConnectionID() string {
-	bytes := make([]byte, 16)
-	// rand.Read only fails when the systems random number generator fails. Rare case, ignore
-	_, _ = rand.Read(bytes)
-	// Important: Use URLEncoding. StdEncoding contains "/" which will be randomly part of the connectionID and cause parsing problems
-	return base64.URLEncoding.EncodeToString(bytes)
+	return uuid.NewString()
+}
+
+func newConnectionToken() string {
+	return fmt.Sprintf("%x", sha1.Sum([]byte(uuid.NewString())))
 }
 
 type negotiateConnection struct {
