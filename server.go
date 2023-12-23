@@ -158,6 +158,7 @@ func (s *server) allowReconnect() bool {
 
 func (s *server) recoverHubLifeCyclePanic() {
 	if err := recover(); err != nil {
+		fmt.Println(string(debug.Stack()))
 		s.reconnectAllowed = false
 		info, dbg := s.prefixLoggers("")
 		_ = info.Log(evt, "panic in hub lifecycle", "error", err, react, "close connection, allow no reconnect")

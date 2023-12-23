@@ -206,11 +206,23 @@ func (l *loop) handleInvocationMessage(invocation invocationMessage) {
 		} else {
 			// hub method might take a long time
 			go func() {
-				result := func() []reflect.Value {
-					defer l.recoverInvocationPanic(invocation)
-					return method.Call(in)
+				var result []reflect.Value
+				defer func() {
+					if err := recover(); err != nil {
+						_ = l.info.Log(evt, "panic in target method", "error", err, "name", invocation.Target, react, "send completion with error")
+						stack := string(debug.Stack())
+						_ = l.dbg.Log(evt, "panic in target method", "error", err, "name", invocation.Target, react, "send completion with error", "stack", stack)
+						if invocation.InvocationID != "" {
+							if !l.party.enableDetailedErrors() {
+								stack = ""
+							}
+							_ = l.hubConn.Completion(invocation.InvocationID, nil, fmt.Sprintf("%v\n%v", err, stack))
+						}
+					} else {
+						l.returnInvocationResult(invocation, result)
+					}
 				}()
-				l.returnInvocationResult(invocation, result)
+				result = method.Call(in)
 			}()
 		}
 	}
@@ -319,18 +331,9 @@ func streamItem(sl *loop, invocation invocationMessage, value interface{}) {
 	_ = sl.hubConn.StreamItem(invocation.InvocationID, value)
 }
 
-func (l *loop) recoverInvocationPanic(invocation invocationMessage) {
-	if err := recover(); err != nil {
-		_ = l.info.Log(evt, "panic in target method", "error", err, "name", invocation.Target, react, "send completion with error")
-		stack := string(debug.Stack())
-		_ = l.dbg.Log(evt, "panic in target method", "error", err, "name", invocation.Target, react, "send completion with error", "stack", stack)
-		if invocation.InvocationID != "" {
-			if !l.party.enableDetailedErrors() {
-				stack = ""
-			}
-			_ = l.hubConn.Completion(invocation.InvocationID, nil, fmt.Sprintf("%v\n%v", err, stack))
-		}
-	}
+func (l *loop) recoverInvocationPanic(invocation invocationMessage) bool {
+
+	return false
 }
 
 func buildMethodArguments(method reflect.Value, invocation invocationMessage,

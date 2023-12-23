@@ -15,20 +15,20 @@ import (
 	"nhooyr.io/websocket"
 )
 
-type httpMux struct {
-	mx            sync.RWMutex
-	connectionMap map[string]Connection
+type HttpMux struct {
+	Mx            sync.RWMutex
+	ConnectionMap map[string]Connection
 	server        Server
 }
 
-func NewHTTPMux(server Server) *httpMux {
-	return &httpMux{
-		connectionMap: make(map[string]Connection),
+func NewHTTPMux(server Server) *HttpMux {
+	return &HttpMux{
+		ConnectionMap: make(map[string]Connection),
 		server:        server,
 	}
 }
 
-func (h *httpMux) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+func (h *HttpMux) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	switch request.Method {
 	case "POST":
 		h.HandlePost(writer, request)
@@ -39,7 +39,7 @@ func (h *httpMux) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 }
 
-func (h *httpMux) HandlePost(writer http.ResponseWriter, request *http.Request) {
+func (h *HttpMux) HandlePost(writer http.ResponseWriter, request *http.Request) {
 	connectionID := request.URL.Query().Get("id")
 	if connectionID == "" {
 		writer.WriteHeader(http.StatusBadRequest)
@@ -47,9 +47,9 @@ func (h *httpMux) HandlePost(writer http.ResponseWriter, request *http.Request) 
 	}
 	info, _ := h.server.prefixLoggers("")
 	for {
-		h.mx.RLock()
-		c, ok := h.connectionMap[connectionID]
-		h.mx.RUnlock()
+		h.Mx.RLock()
+		c, ok := h.ConnectionMap[connectionID]
+		h.Mx.RUnlock()
 		if ok {
 			// Connection is initiated
 			switch conn := c.(type) {
@@ -72,7 +72,7 @@ func (h *httpMux) HandlePost(writer http.ResponseWriter, request *http.Request) 
 	}
 }
 
-func (h *httpMux) HandleGet(writer http.ResponseWriter, request *http.Request) {
+func (h *HttpMux) HandleGet(writer http.ResponseWriter, request *http.Request) {
 	upgrade := false
 	for _, connHead := range strings.Split(request.Header.Get("Connection"), ",") {
 		if strings.ToLower(strings.TrimSpace(connHead)) == "upgrade" {
@@ -90,15 +90,15 @@ func (h *httpMux) HandleGet(writer http.ResponseWriter, request *http.Request) {
 	}
 }
 
-func (h *httpMux) HandleServerSentEvent(writer http.ResponseWriter, request *http.Request) {
+func (h *HttpMux) HandleServerSentEvent(writer http.ResponseWriter, request *http.Request) {
 	connectionID := request.URL.Query().Get("id")
 	if connectionID == "" {
 		writer.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	h.mx.RLock()
-	c, ok := h.connectionMap[connectionID]
-	h.mx.RUnlock()
+	h.Mx.RLock()
+	c, ok := h.ConnectionMap[connectionID]
+	h.Mx.RUnlock()
 	if ok {
 		if _, ok := c.(*negotiateConnection); ok {
 			ctx, _ := onecontext.Merge(h.server.context(), request.Context())
@@ -143,7 +143,7 @@ func (h *httpMux) HandleServerSentEvent(writer http.ResponseWriter, request *htt
 	}
 }
 
-func (h *httpMux) HandleWebsocket(writer http.ResponseWriter, request *http.Request) {
+func (h *HttpMux) HandleWebsocket(writer http.ResponseWriter, request *http.Request) {
 	accOptions := &websocket.AcceptOptions{
 		CompressionMode:    websocket.CompressionContextTakeover,
 		InsecureSkipVerify: h.server.insecureSkipVerify(),
@@ -157,19 +157,15 @@ func (h *httpMux) HandleWebsocket(writer http.ResponseWriter, request *http.Requ
 		return
 	}
 	websocketConn.SetReadLimit(int64(h.server.maximumReceiveMessageSize()))
-	connectionMapKey := request.URL.Query().Get("id")
-	if connectionMapKey == "" {
+	ConnectionMapKey := request.URL.Query().Get("id")
+	if ConnectionMapKey == "" {
 		// Support websocket connection without negotiate
-		connectionMapKey = newConnectionID()
-		h.mx.Lock()
-		h.connectionMap[connectionMapKey] = &negotiateConnection{
-			ConnectionBase{connectionID: connectionMapKey},
-		}
-		h.mx.Unlock()
+		ConnectionMapKey = newConnectionID()
+		h.AddConnectionID(ConnectionMapKey)
 	}
-	h.mx.RLock()
-	c, ok := h.connectionMap[connectionMapKey]
-	h.mx.RUnlock()
+	h.Mx.RLock()
+	c, ok := h.ConnectionMap[ConnectionMapKey]
+	h.Mx.RUnlock()
 	if ok {
 		if _, ok := c.(*negotiateConnection); ok {
 			// Connection is negotiated but not initiated
@@ -188,12 +184,12 @@ func (h *httpMux) HandleWebsocket(writer http.ResponseWriter, request *http.Requ
 	}
 }
 
-func (h *httpMux) Negotiate(w http.ResponseWriter, req *http.Request) {
+func (h *HttpMux) Negotiate(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "POST" {
 		w.WriteHeader(http.StatusBadRequest)
 	} else {
 		connectionID := newConnectionID()
-		connectionMapKey := connectionID
+		ConnectionMapKey := connectionID
 
 		negotiateVersion := 0
 		var err error
@@ -207,13 +203,13 @@ func (h *httpMux) Negotiate(w http.ResponseWriter, req *http.Request) {
 		connectionToken := ""
 		if negotiateVersion == 1 {
 			connectionToken = newConnectionToken()
-			connectionMapKey = connectionToken
+			ConnectionMapKey = connectionToken
 		}
-		h.mx.Lock()
-		h.connectionMap[connectionMapKey] = &negotiateConnection{
+		h.Mx.Lock()
+		h.ConnectionMap[ConnectionMapKey] = &negotiateConnection{
 			ConnectionBase{connectionID: connectionID},
 		}
-		h.mx.Unlock()
+		h.Mx.Unlock()
 		var availableTransports []availableTransport
 		for _, transport := range h.server.availableTransports() {
 			switch transport {
@@ -243,14 +239,23 @@ func (h *httpMux) Negotiate(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (h *httpMux) serveConnection(c Connection) error {
-	h.mx.Lock()
-	h.connectionMap[c.ConnectionID()] = c
-	h.mx.Unlock()
+func (h *HttpMux) serveConnection(c Connection) error {
+	h.Mx.Lock()
+	h.ConnectionMap[c.ConnectionID()] = c
+	h.Mx.Unlock()
 	return h.server.Serve(c)
 }
 
+func (h *HttpMux) AddConnectionID(connectionID string) {
+	h.Mx.Lock()
+	h.ConnectionMap[connectionID] = &negotiateConnection{
+		ConnectionBase{connectionID: connectionID},
+	}
+	h.Mx.Unlock()
+}
+
 func newConnectionID() string {
+	fmt.Println("newConnectionID")
 	return uuid.NewString()
 }
 
