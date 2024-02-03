@@ -29,6 +29,8 @@ func NewHTTPMux(server Server) *HttpMux {
 }
 
 func (h *HttpMux) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	l, _ := h.server.loggers()
+	l.Log(evt, "serveHTTP", msg, "handling request: "+request.URL.Path+" "+request.Method)
 	switch request.Method {
 	case "POST":
 		h.HandlePost(writer, request)
@@ -73,6 +75,8 @@ func (h *HttpMux) HandlePost(writer http.ResponseWriter, request *http.Request) 
 }
 
 func (h *HttpMux) HandleGet(writer http.ResponseWriter, request *http.Request) {
+	l, _ := h.server.loggers()
+	l.Log(evt, "handleGet", msg, "handling get request")
 	upgrade := false
 	for _, connHead := range strings.Split(request.Header.Get("Connection"), ",") {
 		if strings.ToLower(strings.TrimSpace(connHead)) == "upgrade" {
@@ -144,6 +148,8 @@ func (h *HttpMux) HandleServerSentEvent(writer http.ResponseWriter, request *htt
 }
 
 func (h *HttpMux) HandleWebsocket(writer http.ResponseWriter, request *http.Request) {
+	l, _ := h.server.loggers()
+	l.Log(evt, "handleWebsocket", msg, "handling websocket request")
 	accOptions := &websocket.AcceptOptions{
 		CompressionMode:    websocket.CompressionContextTakeover,
 		InsecureSkipVerify: h.server.insecureSkipVerify(),
@@ -151,8 +157,7 @@ func (h *HttpMux) HandleWebsocket(writer http.ResponseWriter, request *http.Requ
 	}
 	websocketConn, err := websocket.Accept(writer, request, accOptions)
 	if err != nil {
-		_, debug := h.server.loggers()
-		_ = debug.Log(evt, "handleWebsocket", msg, "error accepting websockets", "error", err)
+		l.Log(evt, "handleWebsocket", msg, "error accepting websockets", "error", err)
 		// don't need to write an error header here as websocket.Accept has already used http.Error
 		return
 	}
